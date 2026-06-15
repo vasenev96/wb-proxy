@@ -27,6 +27,22 @@ app.use((req, res, next) => {
   next();
 });
 
+const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+
+// Запрос к ВБ с повтором при 429
+async function fetchWB(url, options, retries = 4) {
+  for (let i = 0; i < retries; i++) {
+    const response = await fetch(url, options);
+    if (response.status !== 429) return response;
+    // При 429 ждём: 2с, 5с, 10с, 20с
+    const delay = [2000, 5000, 10000, 20000][i] || 20000;
+    console.log(`429 от ВБ, ждём ${delay}мс (попытка ${i + 1}/${retries})`);
+    await sleep(delay);
+  }
+  // Последняя попытка без перехвата
+  return fetch(url, options);
+}
+
 // Универсальный прокси: /proxy/statistics/api/v1/supplier/sales?...
 app.all('/proxy/:service/*', async (req, res) => {
   const service = req.params.service;
@@ -41,7 +57,7 @@ app.all('/proxy/:service/*', async (req, res) => {
   const url = `${base}${path}${query ? '?' + query : ''}`;
 
   try {
-    const response = await fetch(url, {
+    const response = await fetchWB(url, {
       method: req.method,
       headers: {
         'Authorization': token,
